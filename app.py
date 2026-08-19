@@ -8,7 +8,11 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from db import init_db, get_connection, NUM_STUDENTS, INITIAL_CASH
+from db import (
+    init_db, get_connection,
+    NUM_STUDENTS, INITIAL_CASH,
+    reset_game, get_game_summary      # ← 이 두 줄 추가
+)
 
 # ─────────────────────────────────────────────────────────────
 # 페이지 기본 설정
@@ -323,12 +327,13 @@ if selected_user == "교사 관리자" and st.session_state.get("teacher_auth"):
     companies_df = get_companies()
 
     # 탭 구성 (비밀번호 관리 탭 추가)
-    tab_news, tab_price, tab_rank, tab_pw = st.tabs([
-        "📰 오늘의 뉴스 작성",
-        "💹 주가 변동 설정 및 하루 경과",
-        "🏆 학생 순위 & 거래 내역",
-        "🔑 비밀번호 관리",
-    ])
+    tab_news, tab_price, tab_rank, tab_pw, tab_reset = st.tabs([
+    "📰 오늘의 뉴스 작성",
+    "💹 주가 변동 설정 및 하루 경과",
+    "🏆 학생 순위 & 거래 내역",
+    "🔑 비밀번호 관리",
+    "🔄 게임 초기화",              # ← 새로 추가된 탭
+])
 
     # ── [탭1] 뉴스 작성 ─────────────────────────────────────
     with tab_news:
@@ -505,6 +510,119 @@ if selected_user == "교사 관리자" and st.session_state.get("teacher_auth"):
         st.markdown("---")
 
         col_single, col_bulk = st.columns(2)
+            # ── [탭5] 게임 전체 초기화 ──────────────────────────────
+    with tab_reset:
+        st.subheader("🔄 게임 전체 초기화")
+
+        # ── 현재 게임 현황 표시 ───────────────────────────────
+        st.markdown("### 📊 현재 게임 현황")
+        st.info("초기화 전 현재 진행 상황을 확인하세요.")
+
+        summary = get_game_summary()
+
+        s_col1, s_col2, s_col3, s_col4 = st.columns(4)
+        s_col1.metric("📅 현재 거래일",   f"{summary['current_day']}일차")
+        s_col2.metric("💱 총 거래 횟수",  f"{summary['tx_count']}건")
+        s_col3.metric("📰 등록된 뉴스",   f"{summary['news_count']}건")
+        s_col4.metric("👥 거래 참여 학생", f"{summary['active_students']}명")
+
+        st.markdown("---")
+
+        # ── 초기화 옵션 선택 ──────────────────────────────────
+        st.markdown("### ⚙️ 초기화 옵션")
+
+        reset_pw_also = st.checkbox(
+            "🔑 비밀번호도 함께 초기화 (전체 학생 비밀번호를 '0000'으로 변경)",
+            value=False
+        )
+
+        st.markdown("---")
+
+        # ── 초기화 후 상태 미리보기 ───────────────────────────
+        st.markdown("### 🔍 초기화 후 상태 미리보기")
+
+        preview_data = {
+            "항목":       ["거래일", "학생 잔액", "보유 주식",
+                          "거래 내역", "뉴스", "주가", "비밀번호"],
+            "현재 상태":  [
+                f"{summary['current_day']}일차",
+                "각자 다름",
+                "각자 보유 중",
+                f"{summary['tx_count']}건",
+                f"{summary['news_count']}건",
+                "각자 다름",
+                "각자 다름"
+            ],
+            "초기화 후":  [
+                "1일차",
+                "1,000,000원",
+                "전량 삭제",
+                "전체 삭제",
+                "전체 삭제",
+                "초기 주가로 복구",
+                "0000으로 초기화" if reset_pw_also else "유지 (변경 없음)"
+            ],
+        }
+
+        st.table(pd.DataFrame(preview_data))
+
+        st.markdown("---")
+
+        # ── 초기화 실행 (2단계 확인) ──────────────────────────
+        st.markdown("### ⚠️ 초기화 실행")
+        st.error(
+            "🚨 **주의:** 초기화는 되돌릴 수 없습니다!  \n"
+            "모든 학생의 거래 내역, 보유 주식, 잔액이 초기화됩니다.  \n"
+            "반드시 데이터를 먼저 저장(캡처/엑셀 다운로드) 후 진행하세요."
+        )
+
+        # 2단계 확인: 체크박스 + 버튼
+        confirm_check = st.checkbox(
+            "✅ 위 내용을 확인했으며, 게임을 초기화하겠습니다.",
+            value=False,
+            key="confirm_reset"
+        )
+
+        # 확인 체크박스가 체크되어야만 버튼 활성화
+        if st.button(
+            "🔄 게임 전체 초기화 실행",
+            type="primary",
+            disabled=not confirm_check,
+            key="btn_reset"
+        ):
+            # 3단계: 최종 재확인 (session_state 활용)
+            st.session_state["reset_requested"] = True
+
+        # 최종 재확인 단계
+        if st.session_state.get("reset_requested", False):
+            st.warning("⚠️ 정말로 초기화하시겠습니까? 아래 버튼을 눌러 최종 확인하세요.")
+
+            final_col1, final_col2 = st.columns(2)
+
+            with final_col1:
+                if st.button(
+                    "✅ 네, 초기화합니다",
+                    type="primary",
+                    key="btn_final_yes"
+                ):
+                    # 초기화 실행
+                    ok, msg = reset_game(reset_password=reset_pw_also)
+                    if ok:
+                        st.session_state["reset_requested"] = False
+                        st.success(f"🎉 {msg}")
+                        st.balloons()   # 초기화 완료 축하 애니메이션
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+            with final_col2:
+                if st.button(
+                    "❌ 아니요, 취소합니다",
+                    key="btn_final_no"
+                ):
+                    st.session_state["reset_requested"] = False
+                    st.info("초기화가 취소되었습니다.")
+                    st.rerun()
 
         # ── 개별 비밀번호 변경 ────────────────────────────────
         with col_single:
