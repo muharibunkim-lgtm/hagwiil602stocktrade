@@ -128,3 +128,98 @@ def init_db():
 
     conn.commit()
     conn.close()
+# db.py 하단에 추가할 초기화 함수들
+
+def reset_game(reset_password: bool = False):
+    """
+    게임 전체 초기화 함수
+    - 학생 잔액, 보유 주식, 거래 내역, 뉴스, 주가, 거래일 초기화
+    - reset_password=True 이면 비밀번호도 '0000'으로 초기화
+    """
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN")
+
+        # 1. 보유 주식 전체 삭제
+        conn.execute("DELETE FROM holdings")
+
+        # 2. 거래 내역 전체 삭제
+        conn.execute("DELETE FROM transactions")
+
+        # 3. 뉴스 전체 삭제
+        conn.execute("DELETE FROM news")
+
+        # 4. 모든 학생 잔액 초기화
+        if reset_password:
+            # 비밀번호도 함께 초기화
+            conn.execute(
+                "UPDATE students SET cash=?, password=?",
+                (INITIAL_CASH, DEFAULT_PASSWORD)
+            )
+        else:
+            # 비밀번호는 유지
+            conn.execute(
+                "UPDATE students SET cash=?",
+                (INITIAL_CASH,)
+            )
+
+        # 5. 기업 주가 초기값으로 복구
+        for name, sector, price in INITIAL_COMPANIES:
+            conn.execute(
+                """
+                UPDATE companies
+                SET current_price=?, prev_price=?
+                WHERE name=? AND sector=?
+                """,
+                (price, price, name, sector)
+            )
+
+        # 6. 거래일 1일차로 복구
+        conn.execute(
+            "UPDATE game_state SET value='1' WHERE key='day'"
+        )
+
+        conn.commit()
+        conn.close()
+        return True, "게임이 성공적으로 초기화되었습니다!"
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return False, f"초기화 중 오류 발생: {e}"
+
+
+def get_game_summary() -> dict:
+    """
+    초기화 전 현재 게임 현황을 요약해서 반환합니다.
+    (초기화 전 확인용)
+    """
+    conn = get_connection()
+
+    day = int(conn.execute(
+        "SELECT value FROM game_state WHERE key='day'"
+    ).fetchone()["value"])
+
+    tx_count = conn.execute(
+        "SELECT COUNT(*) as cnt FROM transactions"
+    ).fetchone()["cnt"]
+
+    news_count = conn.execute(
+        "SELECT COUNT(*) as cnt FROM news"
+    ).fetchone()["cnt"]
+
+    active_students = conn.execute(
+        """
+        SELECT COUNT(DISTINCT student_id) as cnt
+        FROM transactions
+        """
+    ).fetchone()["cnt"]
+
+    conn.close()
+
+    return {
+        "current_day":      day,
+        "tx_count":         tx_count,
+        "news_count":       news_count,
+        "active_students":  active_students,
+    }
