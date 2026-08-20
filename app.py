@@ -1,26 +1,32 @@
+```python
 # app.py
-# 자산 확장 버전: 국채, 금, 비트코인, 적금, 인플레이션 추가
 
 import streamlit as st
-import sqlite3
 import pandas as pd
 from db import (
-    init_db, get_connection,
-    NUM_STUDENTS, INITIAL_CASH,
-    get_setting, set_setting,
-    verify_student_password, update_student_password,
-    reset_all_passwords, get_all_passwords,
-    reset_game, get_game_summary,
-    INITIAL_GOLD_PRICE, INITIAL_BTC_PRICE,
+    init_db,
+    get_connection,
+    get_setting,
+    set_setting,
+    verify_student_password,
+    update_student_password,
+    reset_all_passwords,
+    get_all_passwords,
+    reset_game,
+    get_game_summary,
+    NUM_STUDENTS,
+    INITIAL_CASH,
+    INITIAL_GOLD_PRICE,
+    INITIAL_BTC_PRICE,
 )
 
-# ─────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="📈 어린이 경제 교실",
+    page_title="💰 어린이 경제 교실",
     page_icon="💰",
     layout="wide",
 )
 init_db()
+
 TEACHER_PASSWORD = "1234"
 
 
@@ -60,8 +66,8 @@ def get_news(day: int) -> pd.DataFrame:
     df = pd.read_sql(
         """
         SELECT n.content, n.news_type,
-               COALESCE(c.name, '전체 경제') AS company_name,
-               COALESCE(c.sector, '경제') AS sector
+               COALESCE(c.name,'전체 경제') AS company_name,
+               COALESCE(c.sector,'경제')    AS sector
         FROM news n
         LEFT JOIN companies c ON n.company_id = c.company_id
         WHERE n.day = ?
@@ -113,7 +119,6 @@ def get_alt_holdings(student_id: int) -> pd.DataFrame:
     return df
 
 def get_bond_holding(student_id: int) -> float:
-    """국채 보유 금액을 반환합니다."""
     conn = get_connection()
     row = conn.execute(
         "SELECT amount FROM bond_holdings WHERE student_id=?", (student_id,)
@@ -122,14 +127,12 @@ def get_bond_holding(student_id: int) -> float:
     return float(row["amount"]) if row else 0.0
 
 def get_savings(student_id: int) -> pd.DataFrame:
-    """학생의 적금 목록을 반환합니다."""
     conn = get_connection()
     df = pd.read_sql(
         """
-        SELECT saving_id, amount, rate, start_day,
-               end_day, is_matured,
-               ROUND(amount * rate / 100, 0) AS interest,
-               ROUND(amount * (1 + rate/100), 0) AS maturity_amount
+        SELECT saving_id, amount, rate, start_day, end_day, is_matured,
+               ROUND(amount * rate / 100, 0)       AS interest,
+               ROUND(amount * (1 + rate/100), 0)   AS maturity_amount
         FROM savings
         WHERE student_id = ?
         ORDER BY saving_id DESC
@@ -140,24 +143,18 @@ def get_savings(student_id: int) -> pd.DataFrame:
     return df
 
 def calc_total_assets(student_id: int) -> dict:
-    """
-    총 자산 계산:
-    현금 + 주식평가액 + 금평가액 + 비트코인평가액 + 국채 + 적금(납입액)
-    """
     cash = get_student_cash(student_id)
-
-    # 주식 평가액
     conn = get_connection()
-    r = conn.execute(
+
+    r1 = conn.execute(
         """
         SELECT COALESCE(SUM(h.quantity * c.current_price),0) AS v
         FROM holdings h JOIN companies c ON h.company_id=c.company_id
         WHERE h.student_id=?
         """, (student_id,)
     ).fetchone()
-    stock_val = float(r["v"])
+    stock_val = float(r1["v"])
 
-    # 대체 자산 평가액
     r2 = conn.execute(
         """
         SELECT COALESCE(SUM(ah.quantity * a.current_price),0) AS v
@@ -167,17 +164,14 @@ def calc_total_assets(student_id: int) -> dict:
     ).fetchone()
     alt_val = float(r2["v"])
 
-    # 국채
     bond_val = get_bond_holding(student_id)
 
-    # 적금 (만기 미도래분 납입액만 자산으로 포함)
     r3 = conn.execute(
         "SELECT COALESCE(SUM(amount),0) AS v FROM savings WHERE student_id=? AND is_matured=0",
         (student_id,)
     ).fetchone()
     saving_val = float(r3["v"])
 
-    # 누적 인플레이션 손실
     r4 = conn.execute(
         "SELECT COALESCE(cumulative_loss,0) AS v FROM students WHERE student_id=?",
         (student_id,)
@@ -186,7 +180,7 @@ def calc_total_assets(student_id: int) -> dict:
 
     conn.close()
 
-    total = cash + stock_val + alt_val + bond_val + saving_val
+    total       = cash + stock_val + alt_val + bond_val + saving_val
     profit_rate = (total / INITIAL_CASH - 1) * 100
 
     return {
@@ -201,20 +195,22 @@ def calc_total_assets(student_id: int) -> dict:
     }
 
 
-# ── 거래 함수 ──────────────────────────────────────────────────
+# ── 거래 함수 ─────────────────────────────────────────────────
 
 def buy_stock(student_id, company_id, quantity, price, reason, day):
     total = quantity * price
-    conn = get_connection()
+    conn  = get_connection()
     try:
         conn.execute("BEGIN")
         cash = float(conn.execute(
             "SELECT cash FROM students WHERE student_id=?", (student_id,)
         ).fetchone()["cash"])
         if cash < total:
-            conn.close(); return False, "잔액이 부족합니다."
+            conn.close()
+            return False, "잔액이 부족합니다."
         conn.execute(
-            "UPDATE students SET cash=cash-? WHERE student_id=?", (total, student_id)
+            "UPDATE students SET cash=cash-? WHERE student_id=?",
+            (total, student_id)
         )
         conn.execute(
             """
@@ -225,17 +221,20 @@ def buy_stock(student_id, company_id, quantity, price, reason, day):
         )
         conn.execute(
             "INSERT INTO transactions (student_id,asset_type,company_id,tx_type,quantity,price,reason,day) VALUES (?,?,?,?,?,?,?,?)",
-            (student_id,'stock',company_id,'buy',quantity,price,reason,day)
+            (student_id, "stock", company_id, "buy", quantity, price, reason, day)
         )
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return True, "매수 완료!"
     except Exception as e:
-        conn.rollback(); conn.close(); return False, str(e)
+        conn.rollback()
+        conn.close()
+        return False, str(e)
 
 
 def sell_stock(student_id, company_id, quantity, price, reason, day):
     total = quantity * price
-    conn = get_connection()
+    conn  = get_connection()
     try:
         conn.execute("BEGIN")
         row = conn.execute(
@@ -243,37 +242,43 @@ def sell_stock(student_id, company_id, quantity, price, reason, day):
             (student_id, company_id)
         ).fetchone()
         if row is None or row["quantity"] < quantity:
-            conn.close(); return False, "보유 주식이 부족합니다."
+            conn.close()
+            return False, "보유 주식이 부족합니다."
         conn.execute(
             "UPDATE holdings SET quantity=quantity-? WHERE student_id=? AND company_id=?",
             (quantity, student_id, company_id)
         )
         conn.execute(
-            "UPDATE students SET cash=cash+? WHERE student_id=?", (total, student_id)
+            "UPDATE students SET cash=cash+? WHERE student_id=?",
+            (total, student_id)
         )
         conn.execute(
             "INSERT INTO transactions (student_id,asset_type,company_id,tx_type,quantity,price,reason,day) VALUES (?,?,?,?,?,?,?,?)",
-            (student_id,'stock',company_id,'sell',quantity,price,reason,day)
+            (student_id, "stock", company_id, "sell", quantity, price, reason, day)
         )
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return True, "매도 완료!"
     except Exception as e:
-        conn.rollback(); conn.close(); return False, str(e)
+        conn.rollback()
+        conn.close()
+        return False, str(e)
 
 
 def buy_alt_asset(student_id, asset_type, quantity, price, reason, day):
-    """금 또는 비트코인 매수"""
     total = quantity * price
-    conn = get_connection()
+    conn  = get_connection()
     try:
         conn.execute("BEGIN")
         cash = float(conn.execute(
             "SELECT cash FROM students WHERE student_id=?", (student_id,)
         ).fetchone()["cash"])
         if cash < total:
-            conn.close(); return False, "잔액이 부족합니다."
+            conn.close()
+            return False, "잔액이 부족합니다."
         conn.execute(
-            "UPDATE students SET cash=cash-? WHERE student_id=?", (total, student_id)
+            "UPDATE students SET cash=cash-? WHERE student_id=?",
+            (total, student_id)
         )
         conn.execute(
             """
@@ -284,18 +289,20 @@ def buy_alt_asset(student_id, asset_type, quantity, price, reason, day):
         )
         conn.execute(
             "INSERT INTO transactions (student_id,asset_type,tx_type,quantity,price,reason,day) VALUES (?,?,?,?,?,?,?)",
-            (student_id, asset_type,'buy',quantity,price,reason,day)
+            (student_id, asset_type, "buy", quantity, price, reason, day)
         )
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return True, "매수 완료!"
     except Exception as e:
-        conn.rollback(); conn.close(); return False, str(e)
+        conn.rollback()
+        conn.close()
+        return False, str(e)
 
 
 def sell_alt_asset(student_id, asset_type, quantity, price, reason, day):
-    """금 또는 비트코인 매도"""
     total = quantity * price
-    conn = get_connection()
+    conn  = get_connection()
     try:
         conn.execute("BEGIN")
         row = conn.execute(
@@ -303,26 +310,30 @@ def sell_alt_asset(student_id, asset_type, quantity, price, reason, day):
             (student_id, asset_type)
         ).fetchone()
         if row is None or float(row["quantity"]) < quantity:
-            conn.close(); return False, "보유량이 부족합니다."
+            conn.close()
+            return False, "보유량이 부족합니다."
         conn.execute(
             "UPDATE alt_holdings SET quantity=quantity-? WHERE student_id=? AND asset_type=?",
             (quantity, student_id, asset_type)
         )
         conn.execute(
-            "UPDATE students SET cash=cash+? WHERE student_id=?", (total, student_id)
+            "UPDATE students SET cash=cash+? WHERE student_id=?",
+            (total, student_id)
         )
         conn.execute(
             "INSERT INTO transactions (student_id,asset_type,tx_type,quantity,price,reason,day) VALUES (?,?,?,?,?,?,?)",
-            (student_id, asset_type,'sell',quantity,price,reason,day)
+            (student_id, asset_type, "sell", quantity, price, reason, day)
         )
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return True, "매도 완료!"
     except Exception as e:
-        conn.rollback(); conn.close(); return False, str(e)
+        conn.rollback()
+        conn.close()
+        return False, str(e)
 
 
 def buy_bond(student_id, amount, reason, day):
-    """국채 매수: 현금 → 국채로 전환"""
     conn = get_connection()
     try:
         conn.execute("BEGIN")
@@ -330,9 +341,11 @@ def buy_bond(student_id, amount, reason, day):
             "SELECT cash FROM students WHERE student_id=?", (student_id,)
         ).fetchone()["cash"])
         if cash < amount:
-            conn.close(); return False, "잔액이 부족합니다."
+            conn.close()
+            return False, "잔액이 부족합니다."
         conn.execute(
-            "UPDATE students SET cash=cash-? WHERE student_id=?", (amount, student_id)
+            "UPDATE students SET cash=cash-? WHERE student_id=?",
+            (amount, student_id)
         )
         conn.execute(
             """
@@ -343,16 +356,18 @@ def buy_bond(student_id, amount, reason, day):
         )
         conn.execute(
             "INSERT INTO transactions (student_id,asset_type,tx_type,quantity,price,reason,day) VALUES (?,?,?,?,?,?,?)",
-            (student_id,'bond','buy',amount,1,reason,day)
+            (student_id, "bond", "buy", amount, 1, reason, day)
         )
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return True, "국채 매수 완료!"
     except Exception as e:
-        conn.rollback(); conn.close(); return False, str(e)
+        conn.rollback()
+        conn.close()
+        return False, str(e)
 
 
 def sell_bond(student_id, amount, reason, day):
-    """국채 매도: 국채 → 현금으로 전환"""
     conn = get_connection()
     try:
         conn.execute("BEGIN")
@@ -360,26 +375,30 @@ def sell_bond(student_id, amount, reason, day):
             "SELECT amount FROM bond_holdings WHERE student_id=?", (student_id,)
         ).fetchone()
         if row is None or float(row["amount"]) < amount:
-            conn.close(); return False, "보유 국채 금액이 부족합니다."
+            conn.close()
+            return False, "보유 국채 금액이 부족합니다."
         conn.execute(
             "UPDATE bond_holdings SET amount=amount-? WHERE student_id=?",
             (amount, student_id)
         )
         conn.execute(
-            "UPDATE students SET cash=cash+? WHERE student_id=?", (amount, student_id)
+            "UPDATE students SET cash=cash+? WHERE student_id=?",
+            (amount, student_id)
         )
         conn.execute(
             "INSERT INTO transactions (student_id,asset_type,tx_type,quantity,price,reason,day) VALUES (?,?,?,?,?,?,?)",
-            (student_id,'bond','sell',amount,1,reason,day)
+            (student_id, "bond", "sell", amount, 1, reason, day)
         )
-        conn.commit(); conn.close()
-        return True, "국채 매도 완료!"
+        conn.commit()
+        conn.close()
+        return True, "국채 환매 완료!"
     except Exception as e:
-        conn.rollback(); conn.close(); return False, str(e)
+        conn.rollback()
+        conn.close()
+        return False, str(e)
 
 
 def deposit_saving(student_id, amount, rate, start_day, end_day, reason, day):
-    """적금 납입"""
     conn = get_connection()
     try:
         conn.execute("BEGIN")
@@ -387,9 +406,11 @@ def deposit_saving(student_id, amount, rate, start_day, end_day, reason, day):
             "SELECT cash FROM students WHERE student_id=?", (student_id,)
         ).fetchone()["cash"])
         if cash < amount:
-            conn.close(); return False, "잔액이 부족합니다."
+            conn.close()
+            return False, "잔액이 부족합니다."
         conn.execute(
-            "UPDATE students SET cash=cash-? WHERE student_id=?", (amount, student_id)
+            "UPDATE students SET cash=cash-? WHERE student_id=?",
+            (amount, student_id)
         )
         conn.execute(
             "INSERT INTO savings (student_id,amount,rate,start_day,end_day,is_matured) VALUES (?,?,?,?,?,0)",
@@ -397,44 +418,38 @@ def deposit_saving(student_id, amount, rate, start_day, end_day, reason, day):
         )
         conn.execute(
             "INSERT INTO transactions (student_id,asset_type,tx_type,quantity,price,reason,day) VALUES (?,?,?,?,?,?,?)",
-            (student_id,'saving','buy',amount,1,reason,day)
+            (student_id, "saving", "buy", amount, 1, reason, day)
         )
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return True, "적금 납입 완료!"
     except Exception as e:
-        conn.rollback(); conn.close(); return False, str(e)
+        conn.rollback()
+        conn.close()
+        return False, str(e)
 
 
 def apply_daily_events(day: int):
-    """
-    하루 경과 시 자동 처리:
-    1. 국채 이자 지급
-    2. 적금 만기 도래 시 원리금 지급
-    3. 인플레이션 → 현금 가치 하락
-    """
-    bond_rate      = get_bond_rate()        # 일일 이자율(%)
-    inflation_rate = get_inflation_rate()   # 일일 물가 상승률(%)
-    conn = get_connection()
-
+    bond_rate      = get_bond_rate()
+    inflation_rate = get_inflation_rate()
+    conn           = get_connection()
     try:
         conn.execute("BEGIN")
 
-        # ── 1. 국채 이자 지급 ────────────────────────────────
-        bond_holders = conn.execute(
+        # 국채 이자 지급
+        for bh in conn.execute(
             "SELECT student_id, amount FROM bond_holdings WHERE amount > 0"
-        ).fetchall()
-        for bh in bond_holders:
+        ).fetchall():
             interest = float(bh["amount"]) * bond_rate / 100
             conn.execute(
                 "UPDATE students SET cash=cash+? WHERE student_id=?",
                 (interest, bh["student_id"])
             )
 
-        # ── 2. 적금 만기 처리 ────────────────────────────────
-        matured = conn.execute(
+        # 적금 만기 처리
+        for sv in conn.execute(
             "SELECT * FROM savings WHERE end_day<=? AND is_matured=0", (day,)
-        ).fetchall()
-        for sv in matured:
+        ).fetchall():
             maturity_amount = float(sv["amount"]) * (1 + float(sv["rate"]) / 100)
             conn.execute(
                 "UPDATE students SET cash=cash+? WHERE student_id=?",
@@ -445,9 +460,10 @@ def apply_daily_events(day: int):
                 (sv["saving_id"],)
             )
 
-        # ── 3. 인플레이션: 현금 가치 하락 ───────────────────
-        students = conn.execute("SELECT student_id, cash FROM students").fetchall()
-        for s in students:
+        # 인플레이션: 현금 가치 하락
+        for s in conn.execute(
+            "SELECT student_id, cash FROM students"
+        ).fetchall():
             loss = float(s["cash"]) * inflation_rate / 100
             conn.execute(
                 "UPDATE students SET cash=cash-?, cumulative_loss=cumulative_loss+? WHERE student_id=?",
@@ -495,7 +511,6 @@ selected_user = st.sidebar.selectbox("👤 접속할 계정을 선택하세요",
 day = get_current_day()
 st.sidebar.markdown(f"---\n📅 **현재 거래일: {day}일차**")
 
-# 다른 학생 선택 시 로그인 초기화
 if selected_user != "교사 관리자":
     sel_id = int(selected_user.replace("학생 ", "").replace("번", ""))
     if st.session_state["logged_student_id"] != sel_id:
@@ -547,9 +562,15 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
         existing = get_news(day)
         if not existing.empty:
             st.success("✅ 오늘의 뉴스가 이미 등록되어 있습니다.")
-            st.dataframe(existing.rename(columns={
-                "company_name":"대상","sector":"분류","content":"내용","news_type":"유형"
-            }), use_container_width=True, hide_index=True)
+            st.dataframe(
+                existing.rename(columns={
+                    "company_name": "대상",
+                    "sector":       "분류",
+                    "content":      "내용",
+                    "news_type":    "유형",
+                }),
+                use_container_width=True, hide_index=True
+            )
         else:
             st.markdown("#### 📌 주식 관련 뉴스")
             stock_news = {}
@@ -558,14 +579,12 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
                     f"[{row['sector']}] {row['name']}",
                     height=70, key=f"snews_{row['company_id']}"
                 )
-
-            st.markdown("#### 🌐 경제 전체 뉴스 (인플레이션·금·비트코인 관련)")
+            st.markdown("#### 🌐 경제 전체 뉴스")
             eco_news = st.text_area(
                 "전체 경제 뉴스 (선택 입력)",
-                placeholder="예) 전 세계 물가가 오르고 있습니다. 안전자산인 금의 수요가 늘고 있어요.",
+                placeholder="예) 전 세계 물가가 오르고 있어요. 금 수요가 늘고 있답니다.",
                 height=80, key="eco_news"
             )
-
             if st.button("📨 뉴스 등록", type="primary"):
                 if any(v.strip() == "" for v in stock_news.values()):
                     st.warning("주식 기업 뉴스를 모두 입력해 주세요.")
@@ -574,22 +593,22 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
                     for cid, content in stock_news.items():
                         conn.execute(
                             "INSERT INTO news (day,company_id,content,news_type) VALUES (?,?,?,?)",
-                            (day, cid, content.strip(), 'stock')
+                            (day, cid, content.strip(), "stock")
                         )
                     if eco_news.strip():
                         conn.execute(
                             "INSERT INTO news (day,company_id,content,news_type) VALUES (?,NULL,?,?)",
-                            (day, eco_news.strip(), 'economy')
+                            (day, eco_news.strip(), "economy")
                         )
-                    conn.commit(); conn.close()
+                    conn.commit()
+                    conn.close()
                     st.success("뉴스 등록 완료!")
                     st.rerun()
 
-    # ── [탭2] 시세 변동 & 하루 경과 ─────────────────────────
+    # ── [탭2] 시세 & 하루 경과 ──────────────────────────────
     with tab_price:
         st.subheader("💹 시세 변동 설정 및 하루 경과")
 
-        # 주식 변동률
         st.markdown("#### 📈 주식 변동률 설정")
         change_rates = {}
         cols = st.columns(len(companies_df))
@@ -597,45 +616,39 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
             with cols[i]:
                 diff = row["current_price"] - row["prev_price"]
                 st.metric(
-                    f"{row['name']}",
+                    row["name"],
                     f"{row['current_price']:,}원",
                     delta=f"{diff:+,}원" if diff != 0 else None
                 )
                 change_rates[row["company_id"]] = st.number_input(
-                    "변동률(%)", -30.0, 30.0, 0.0, 0.5, key=f"sr_{row['company_id']}"
+                    "변동률(%)", -30.0, 30.0, 0.0, 0.5,
+                    key=f"sr_{row['company_id']}"
                 )
 
         st.markdown("---")
-
-        # 대체 자산 변동률
         st.markdown("#### 🥇 금 / ₿ 비트코인 시세 변동률 설정")
         alt_rates = {}
         acols = st.columns(len(alt_assets_df))
         for i, (_, row) in enumerate(alt_assets_df.iterrows()):
             with acols[i]:
-                emoji = "🥇" if row["asset_type"] == "gold" else "₿"
-                diff = float(row["current_price"]) - float(row["prev_price"])
+                emoji    = "🥇" if row["asset_type"] == "gold" else "₿"
+                diff     = float(row["current_price"]) - float(row["prev_price"])
+                max_chg  = 50.0 if row["asset_type"] == "bitcoin" else 20.0
                 st.metric(
                     f"{emoji} {row['name']}",
                     f"{row['current_price']:,.0f}원/{row['unit']}",
                     delta=f"{diff:+,.0f}원" if diff != 0 else None
                 )
-                max_change = 50.0 if row["asset_type"] == "bitcoin" else 20.0
                 alt_rates[row["asset_type"]] = st.number_input(
-                    f"변동률(%) (최대 ±{max_change}%)",
-                    -max_change, max_change, 0.0, 0.5,
+                    f"변동률(%) 최대±{max_chg}%",
+                    -max_chg, max_chg, 0.0, 0.5,
                     key=f"ar_{row['asset_type']}"
                 )
 
         st.markdown("---")
-
-        st.markdown("---")
-
-        # ── 경제 지표 설정 ────────────────────────────────────
         st.markdown("#### ⚙️ 경제 지표 설정")
 
         ec1, ec2, ec3, ec4 = st.columns(4)
-
         with ec1:
             new_bond_rate = st.number_input(
                 "🏛️ 국채 일일 이자율(%)",
@@ -645,7 +658,6 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
                 step=0.1,
                 help="하루 경과 시 국채 보유액에 이자 지급"
             )
-
         with ec2:
             new_saving_rate = st.number_input(
                 "🏦 적금 만기 이자율(%)",
@@ -655,7 +667,6 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
                 step=0.5,
                 help="적금 만기 시 지급되는 총 이자율"
             )
-
         with ec3:
             new_saving_period = st.number_input(
                 "🏦 적금 만기 기간(일)",
@@ -665,7 +676,6 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
                 step=1,
                 help="적금 납입 후 만기까지 걸리는 거래일 수"
             )
-
         with ec4:
             new_inflation_rate = st.number_input(
                 "📉 일일 물가 상승률(%)",
@@ -684,52 +694,35 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
             try:
                 conn.execute("BEGIN")
 
-                # 주식 시세 갱신
                 for cid, rate in change_rates.items():
                     cur = conn.execute(
-                        "SELECT current_price FROM companies WHERE company_id=?",
-                        (cid,)
+                        "SELECT current_price FROM companies WHERE company_id=?", (cid,)
                     ).fetchone()["current_price"]
                     new_price = max(100, int(cur * (1 + rate / 100)))
                     conn.execute(
-                        """
-                        UPDATE companies
-                        SET prev_price=current_price, current_price=?
-                        WHERE company_id=?
-                        """,
+                        "UPDATE companies SET prev_price=current_price, current_price=? WHERE company_id=?",
                         (new_price, cid)
                     )
 
-                # 대체 자산 시세 갱신
                 for atype, rate in alt_rates.items():
                     cur = float(conn.execute(
-                        "SELECT current_price FROM alt_assets WHERE asset_type=?",
-                        (atype,)
+                        "SELECT current_price FROM alt_assets WHERE asset_type=?", (atype,)
                     ).fetchone()["current_price"])
                     new_price = max(100, cur * (1 + rate / 100))
                     conn.execute(
-                        """
-                        UPDATE alt_assets
-                        SET prev_price=current_price, current_price=?
-                        WHERE asset_type=?
-                        """,
+                        "UPDATE alt_assets SET prev_price=current_price, current_price=? WHERE asset_type=?",
                         (new_price, atype)
                     )
 
                 conn.commit()
                 conn.close()
 
-                # 경제 지표 저장
                 set_setting("bond_rate",      str(new_bond_rate))
                 set_setting("saving_rate",    str(new_saving_rate))
                 set_setting("saving_period",  str(new_saving_period))
                 set_setting("inflation_rate", str(new_inflation_rate))
 
-                # 하루 경과 이벤트 처리
-                # (국채이자, 적금만기, 인플레이션 적용)
                 apply_daily_events(day)
-
-                # 거래일 증가
                 set_setting("day", str(day + 1))
 
                 st.success(f"✅ {day + 1}일차로 넘어갔습니다!")
@@ -740,7 +733,7 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
                 conn.close()
                 st.error(f"오류 발생: {e}")
 
-    # ── [탭3] 학생 순위 & 거래 내역 ─────────────────────────
+    # ── [탭3] 순위 & 거래 내역 ──────────────────────────────
     with tab_rank:
         st.subheader("🏆 학생 전체 순위")
 
@@ -748,15 +741,15 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
         for sid in range(1, NUM_STUDENTS + 1):
             a = calc_total_assets(sid)
             rank_data.append({
-                "학생":           f"{sid}번",
-                "현금(원)":       int(a["cash"]),
-                "주식(원)":       int(a["stock_val"]),
-                "금·코인(원)":    int(a["alt_val"]),
-                "국채(원)":       int(a["bond_val"]),
-                "적금(원)":       int(a["saving_val"]),
-                "총자산(원)":     int(a["total"]),
-                "수익률(%)":      round(a["profit_rate"], 2),
-                "인플손실(원)":   int(a["cumulative_loss"]),
+                "학생":        f"{sid}번",
+                "현금(원)":    int(a["cash"]),
+                "주식(원)":    int(a["stock_val"]),
+                "금·코인(원)": int(a["alt_val"]),
+                "국채(원)":    int(a["bond_val"]),
+                "적금(원)":    int(a["saving_val"]),
+                "총자산(원)":  int(a["total"]),
+                "수익률(%)":   round(a["profit_rate"], 2),
+                "인플손실(원)": int(a["cumulative_loss"]),
             })
 
         rank_df = (
@@ -764,10 +757,9 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
             .sort_values("총자산(원)", ascending=False)
             .reset_index(drop=True)
         )
-        rank_df.index = rank_df.index + 1
+        rank_df.index      = rank_df.index + 1
         rank_df.index.name = "순위"
 
-        # ✅ pandas 최신 버전 호환: .map() 사용
         def highlight_profit(val):
             if isinstance(val, (int, float)):
                 if val > 0:
@@ -787,19 +779,18 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
         conn = get_connection()
         all_tx = pd.read_sql(
             """
-            SELECT
-                t.day        AS 거래일,
-                t.student_id AS 학생번호,
-                t.asset_type AS 자산유형,
-                COALESCE(c.name, t.asset_type) AS 자산명,
-                CASE t.tx_type
-                    WHEN 'buy'  THEN '매수/납입'
-                    ELSE             '매도/환매'
-                END          AS 거래유형,
-                t.quantity   AS 수량,
-                t.price      AS 단가,
-                (t.quantity * t.price) AS 거래금액,
-                t.reason     AS 투자이유
+            SELECT t.day AS 거래일,
+                   t.student_id AS 학생번호,
+                   t.asset_type AS 자산유형,
+                   COALESCE(c.name, t.asset_type) AS 자산명,
+                   CASE t.tx_type
+                       WHEN 'buy' THEN '매수/납입'
+                       ELSE '매도/환매'
+                   END AS 거래유형,
+                   t.quantity AS 수량,
+                   t.price AS 단가,
+                   (t.quantity * t.price) AS 거래금액,
+                   t.reason AS 투자이유
             FROM transactions t
             LEFT JOIN companies c ON t.company_id = c.company_id
             ORDER BY t.tx_id DESC
@@ -839,7 +830,7 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
                 "학생 선택",
                 options=list(range(1, NUM_STUDENTS + 1)),
                 format_func=lambda x: f"{x}번",
-                key="pw_target"
+                            key="pw_target"
             )
             new_pw_single = st.text_input(
                 "새 비밀번호 입력", max_chars=20, key="new_pw_single"
@@ -880,19 +871,21 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
 
         st.markdown("---")
         reset_pw_also = st.checkbox(
-            "🔑 비밀번호도 함께 초기화 (전체 '0000'으로 변경)", value=False
+            "🔑 비밀번호도 함께 초기화 (전체 '0000'으로 변경)",
+            value=False
         )
 
         preview_data = {
             "항목":      ["거래일","현금","주식","금·비트코인",
                           "국채","적금","뉴스","인플레이션 손실","비밀번호"],
             "현재 상태": [f"{summary['current_day']}일차",
-                         "각자 다름","각자 보유","각자 보유",
-                         "각자 보유","각자 납입","등록됨",
-                         "누적됨","각자 다름"],
+                          "각자 다름","각자 보유","각자 보유",
+                          "각자 보유","각자 납입","등록됨",
+                          "누적됨","각자 다름"],
             "초기화 후": ["1일차","1,000,000원","전량 삭제","전량 삭제",
-                         "전액 삭제","전체 삭제","전체 삭제",
-                         "초기화","0000으로 초기화" if reset_pw_also else "유지"],
+                          "전액 삭제","전체 삭제","전체 삭제",
+                          "초기화",
+                          "0000으로 초기화" if reset_pw_also else "유지"],
         }
         st.table(pd.DataFrame(preview_data))
 
@@ -933,6 +926,7 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
                     st.info("초기화가 취소되었습니다.")
                     st.rerun()
 
+    # 교사 로그아웃
     if st.sidebar.button("🚪 로그아웃"):
         st.session_state["teacher_auth"] = False
         st.rerun()
@@ -958,18 +952,17 @@ elif selected_user != "교사 관리자":
                 st.error("❌ 비밀번호가 틀렸습니다. 선생님께 문의하세요.")
         st.stop()
 
+    # ══════════════════════════════════════════════════════════
+    # ■ 학생 메인 화면
+    # ══════════════════════════════════════════════════════════
 
-# ══════════════════════════════════════════════════════════════
-# ■ 학생 메인 화면
-# ══════════════════════════════════════════════════════════════
-
-    assets        = calc_total_assets(student_id)
-    companies_df  = get_companies()
-    alt_assets_df = get_alt_assets()
-    news_df       = get_news(day)
-    bond_rate     = get_bond_rate()
-    saving_rate   = get_saving_rate()
-    saving_period = get_saving_period()
+    assets         = calc_total_assets(student_id)
+    companies_df   = get_companies()
+    alt_assets_df  = get_alt_assets()
+    news_df        = get_news(day)
+    bond_rate      = get_bond_rate()
+    saving_rate    = get_saving_rate()
+    saving_period  = get_saving_period()
     inflation_rate = get_inflation_rate()
 
     st.title(f"💰 어린이 경제 교실 — 학생 {student_id}번")
@@ -977,18 +970,18 @@ elif selected_user != "교사 관리자":
     # 자산 현황 카드
     st.subheader("💼 나의 자산 현황")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("💵 현금",       f"{int(assets['cash']):,}원")
-    c2.metric("📈 주식",       f"{int(assets['stock_val']):,}원")
-    c3.metric("🥇 금·코인",    f"{int(assets['alt_val']):,}원")
-    c4.metric("🏛️ 국채",       f"{int(assets['bond_val']):,}원")
-    c5.metric("🏦 적금",       f"{int(assets['saving_val']):,}원")
-    c6.metric("🏦 총 자산",    f"{int(assets['total']):,}원",
+    c1.metric("💵 현금",      f"{int(assets['cash']):,}원")
+    c2.metric("📈 주식",      f"{int(assets['stock_val']):,}원")
+    c3.metric("🥇 금·코인",   f"{int(assets['alt_val']):,}원")
+    c4.metric("🏛️ 국채",      f"{int(assets['bond_val']):,}원")
+    c5.metric("🏦 적금",      f"{int(assets['saving_val']):,}원")
+    c6.metric("🏦 총 자산",   f"{int(assets['total']):,}원",
               delta=f"{assets['profit_rate']:+.2f}%")
 
-    # 인플레이션 경고
+    # 인플레이션 경고 메시지
     if assets["cumulative_loss"] > 0:
         st.warning(
-            f"📉 지금까지 물가 상승으로 인해 현금 가치가 총 "
+            f"📉 지금까지 물가 상승으로 현금 가치가 총 "
             f"**{int(assets['cumulative_loss']):,}원** 줄었어요! "
             f"현금만 보유하면 손해가 될 수 있답니다."
         )
@@ -1014,44 +1007,40 @@ elif selected_user != "교사 관리자":
     with tab_market:
         st.subheader(f"📊 {day}일차 전체 시세")
 
-        # 주식 시세
         st.markdown("#### 📈 주식")
         stock_rows = []
         for _, row in companies_df.iterrows():
-            diff = row["current_price"] - row["prev_price"]
-            rate = (diff / row["prev_price"] * 100) if row["prev_price"] else 0
+            diff  = row["current_price"] - row["prev_price"]
+            rate  = (diff / row["prev_price"] * 100) if row["prev_price"] else 0
             arrow = "🔺" if diff > 0 else ("🔻" if diff < 0 else "➡️")
             stock_rows.append({
-                "기업명":      row["name"],
-                "업종":        row["sector"],
-                "현재가(원)":  f"{row['current_price']:,}",
-                "전일 대비":   f"{arrow} {diff:+,}원 ({rate:+.1f}%)",
+                "기업명":     row["name"],
+                "업종":       row["sector"],
+                "현재가(원)": f"{row['current_price']:,}",
+                "전일 대비":  f"{arrow} {diff:+,}원 ({rate:+.1f}%)",
             })
         st.table(pd.DataFrame(stock_rows))
 
-        # 대체 자산 시세
         st.markdown("#### 🥇 금 / ₿ 비트코인")
         alt_rows = []
         for _, row in alt_assets_df.iterrows():
-            diff = float(row["current_price"]) - float(row["prev_price"])
-            rate = (diff / float(row["prev_price"]) * 100) if row["prev_price"] else 0
+            diff  = float(row["current_price"]) - float(row["prev_price"])
+            rate  = (diff / float(row["prev_price"]) * 100) if row["prev_price"] else 0
             arrow = "🔺" if diff > 0 else ("🔻" if diff < 0 else "➡️")
             emoji = "🥇" if row["asset_type"] == "gold" else "₿"
             alt_rows.append({
-                "자산":        f"{emoji} {row['name']}",
-                "현재가":      f"{row['current_price']:,.0f}원/{row['unit']}",
-                "전일 대비":   f"{arrow} {diff:+,.0f}원 ({rate:+.1f}%)",
+                "자산":      f"{emoji} {row['name']}",
+                "현재가":    f"{row['current_price']:,.0f}원/{row['unit']}",
+                "전일 대비": f"{arrow} {diff:+,.0f}원 ({rate:+.1f}%)",
             })
         st.table(pd.DataFrame(alt_rows))
 
-        # 경제 지표 안내
         st.markdown("#### ⚙️ 오늘의 경제 지표")
         ei1, ei2, ei3 = st.columns(3)
         ei1.info(f"🏛️ 국채 일일 이자율: **{bond_rate}%**")
         ei2.info(f"🏦 적금 만기 이자율: **{saving_rate}%** (만기: {saving_period}일)")
         ei3.warning(f"📉 일일 물가 상승률: **{inflation_rate}%** (현금 가치 하락!)")
 
-        # 뉴스
         st.markdown("---")
         st.subheader(f"📰 {day}일차 오늘의 뉴스")
         if news_df.empty:
@@ -1071,16 +1060,12 @@ elif selected_user != "교사 관리자":
 
         with col_buy:
             st.markdown("### 🟢 매수")
-            buy_cn = st.selectbox(
-                "기업 선택", companies_df["name"].tolist(), key="buy_company"
-            )
-            buy_co = companies_df[companies_df["name"] == buy_cn].iloc[0]
+            buy_cn    = st.selectbox("기업 선택", companies_df["name"].tolist(), key="buy_company")
+            buy_co    = companies_df[companies_df["name"] == buy_cn].iloc[0]
             buy_price = int(buy_co["current_price"])
             st.markdown(f"**현재가:** {buy_price:,}원")
 
-            buy_qty = st.number_input(
-                "수량(주)", 1, 1000, 1, 1, key="buy_qty"
-            )
+            buy_qty   = st.number_input("수량(주)", 1, 1000, 1, 1, key="buy_qty")
             buy_total = buy_qty * buy_price
             st.markdown(f"**총 금액:** {buy_total:,}원")
 
@@ -1107,17 +1092,13 @@ elif selected_user != "교사 관리자":
             if sh_df.empty:
                 st.info("보유 중인 주식이 없습니다.")
             else:
-                sell_cn = st.selectbox(
-                    "기업 선택", sh_df["name"].tolist(), key="sell_company"
-                )
-                sell_h = sh_df[sh_df["name"] == sell_cn].iloc[0]
+                sell_cn = st.selectbox("기업 선택", sh_df["name"].tolist(), key="sell_company")
+                sell_h  = sh_df[sh_df["name"] == sell_cn].iloc[0]
                 sell_price = int(sell_h["current_price"])
-                max_qty = int(sell_h["quantity"])
+                max_qty    = int(sell_h["quantity"])
                 st.markdown(f"**현재가:** {sell_price:,}원 | **보유:** {max_qty}주")
 
-                sell_qty = st.number_input(
-                    "수량(주)", 1, max_qty, 1, 1, key="sell_qty"
-                )
+                sell_qty = st.number_input("수량(주)", 1, max_qty, 1, 1, key="sell_qty")
                 st.markdown(f"**총 금액:** {sell_qty * sell_price:,}원")
 
                 sell_reason = st.text_area(
@@ -1137,9 +1118,7 @@ elif selected_user != "교사 관리자":
     # ── [탭3] 금·비트코인 거래 ───────────────────────────────
     with tab_alt:
         st.subheader("🥇 금 / ₿ 비트코인 거래")
-        st.info(
-            "💡 금은 비교적 안전한 자산이에요. 비트코인은 가격 변동이 매우 크답니다!"
-        )
+        st.info("💡 금은 비교적 안전한 자산이에요. 비트코인은 가격 변동이 매우 크답니다!")
 
         asset_labels = {
             "gold":    "🥇 금 (단위: g)",
@@ -1155,15 +1134,10 @@ elif selected_user != "교사 관리자":
                 format_func=lambda x: asset_labels[x],
                 key="alt_buy_type"
             )
-            alt_info = alt_assets_df[
-                alt_assets_df["asset_type"] == alt_buy_type
-            ].iloc[0]
+            alt_info      = alt_assets_df[alt_assets_df["asset_type"] == alt_buy_type].iloc[0]
             alt_buy_price = float(alt_info["current_price"])
-            st.markdown(
-                f"**현재가:** {alt_buy_price:,.0f}원/{alt_info['unit']}"
-            )
+            st.markdown(f"**현재가:** {alt_buy_price:,.0f}원/{alt_info['unit']}")
 
-            # 비트코인은 소수점 단위 거래 가능
             if alt_buy_type == "bitcoin":
                 alt_buy_qty = st.number_input(
                     "수량(BTC)", 0.01, 10.0, 0.01, 0.01,
@@ -1189,17 +1163,13 @@ elif selected_user != "교사 관리자":
             alt_buy_disabled = (
                 alt_buy_reason.strip() == "" or alt_buy_total > assets["cash"]
             )
-            if st.button(
-                "✅ 매수", type="primary",
-                disabled=alt_buy_disabled, key="btn_alt_buy"
-            ):
+            if st.button("✅ 매수", type="primary", disabled=alt_buy_disabled, key="btn_alt_buy"):
                 ok, msg = buy_alt_asset(
                     student_id, alt_buy_type,
                     alt_buy_qty, alt_buy_price,
                     alt_buy_reason.strip(), day
                 )
-                st.success(f"🎉 {asset_labels[alt_buy_type]} {alt_buy_qty} 매수 완료!") \
-                    if ok else st.error(msg)
+                st.success(f"🎉 {asset_labels[alt_buy_type]} {alt_buy_qty} 매수 완료!") if ok else st.error(msg)
                 if ok: st.rerun()
 
         with alt_col_sell:
@@ -1214,9 +1184,7 @@ elif selected_user != "교사 관리자":
                     format_func=lambda x: asset_labels.get(x, x),
                     key="alt_sell_type"
                 )
-                alt_sell_h = alt_h_df[
-                    alt_h_df["asset_type"] == alt_sell_type
-                ].iloc[0]
+                alt_sell_h     = alt_h_df[alt_h_df["asset_type"] == alt_sell_type].iloc[0]
                 alt_sell_price = float(alt_sell_h["current_price"])
                 alt_max_qty    = float(alt_sell_h["quantity"])
                 st.markdown(
@@ -1242,35 +1210,28 @@ elif selected_user != "교사 관리자":
                     height=90, key="alt_sell_reason"
                 )
                 alt_sell_disabled = alt_sell_reason.strip() == ""
-                if st.button(
-                    "✅ 매도", type="primary",
-                    disabled=alt_sell_disabled, key="btn_alt_sell"
-                ):
+                if st.button("✅ 매도", type="primary", disabled=alt_sell_disabled, key="btn_alt_sell"):
                     ok, msg = sell_alt_asset(
                         student_id, alt_sell_type,
                         alt_sell_qty, alt_sell_price,
                         alt_sell_reason.strip(), day
                     )
-                    st.success(f"🎉 매도 완료!") if ok else st.error(msg)
+                    st.success("🎉 매도 완료!") if ok else st.error(msg)
                     if ok: st.rerun()
 
     # ── [탭4] 국채 ───────────────────────────────────────────
     with tab_bond:
         st.subheader("🏛️ 국채 투자")
-
         bond_amount = get_bond_holding(student_id)
 
         st.info(
             f"🏛️ 국채는 **매일 {bond_rate}%** 이자를 현금으로 받는 안전한 투자예요!\n\n"
-            f"단, 주식처럼 시세 차익은 없고 원금 그대로 돌려받을 수 있어요."
+            f"주식처럼 시세 차익은 없지만 원금이 보장된답니다."
         )
 
         bc1, bc2 = st.columns(2)
-        bc1.metric("🏛️ 현재 국채 보유액", f"{int(bond_amount):,}원")
-        bc2.metric(
-            "💰 일일 예상 이자",
-            f"{int(bond_amount * bond_rate / 100):,}원"
-        )
+        bc1.metric("🏛️ 현재 국채 보유액",  f"{int(bond_amount):,}원")
+        bc2.metric("💰 일일 예상 이자",    f"{int(bond_amount * bond_rate / 100):,}원")
 
         st.markdown("---")
         bond_col_buy, bond_col_sell = st.columns(2)
@@ -1278,12 +1239,10 @@ elif selected_user != "교사 관리자":
         with bond_col_buy:
             st.markdown("### 🟢 국채 매수")
             bond_buy_amount = st.number_input(
-                "매수 금액(원)", 10000, 1000000,
-                10000, 10000, key="bond_buy_amount"
+                "매수 금액(원)", 10000, 1000000, 10000, 10000, key="bond_buy_amount"
             )
             if bond_buy_amount > assets["cash"]:
                 st.error(f"잔액 부족! (보유 현금: {int(assets['cash']):,}원)")
-
             bond_buy_reason = st.text_area(
                 "✏️ 투자 이유 (필수)",
                 placeholder="예) 안정적인 이자를 매일 받고 싶어서요.",
@@ -1292,25 +1251,20 @@ elif selected_user != "교사 관리자":
             bond_buy_disabled = (
                 bond_buy_reason.strip() == "" or bond_buy_amount > assets["cash"]
             )
-            if st.button(
-                "✅ 국채 매수", type="primary",
-                disabled=bond_buy_disabled, key="btn_bond_buy"
-            ):
+            if st.button("✅ 국채 매수", type="primary", disabled=bond_buy_disabled, key="btn_bond_buy"):
                 ok, msg = buy_bond(
-                    student_id, bond_buy_amount,
-                    bond_buy_reason.strip(), day
+                    student_id, bond_buy_amount, bond_buy_reason.strip(), day
                 )
                 st.success(f"🎉 국채 {bond_buy_amount:,}원 매수 완료!") if ok else st.error(msg)
                 if ok: st.rerun()
 
         with bond_col_sell:
-            st.markdown("### 🔴 국채 매도 (환매)")
+            st.markdown("### 🔴 국채 환매")
             if bond_amount <= 0:
                 st.info("보유 중인 국채가 없습니다.")
             else:
                 bond_sell_amount = st.number_input(
-                    "환매 금액(원)", 10000, int(bond_amount),
-                    10000, 10000, key="bond_sell_amount"
+                    "환매 금액(원)", 10000, int(bond_amount), 10000, 10000, key="bond_sell_amount"
                 )
                 bond_sell_reason = st.text_area(
                     "✏️ 환매 이유 (필수)",
@@ -1318,13 +1272,9 @@ elif selected_user != "교사 관리자":
                     height=90, key="bond_sell_reason"
                 )
                 bond_sell_disabled = bond_sell_reason.strip() == ""
-                if st.button(
-                    "✅ 국채 환매", type="primary",
-                    disabled=bond_sell_disabled, key="btn_bond_sell"
-                ):
+                if st.button("✅ 국채 환매", type="primary", disabled=bond_sell_disabled, key="btn_bond_sell"):
                     ok, msg = sell_bond(
-                        student_id, bond_sell_amount,
-                        bond_sell_reason.strip(), day
+                        student_id, bond_sell_amount, bond_sell_reason.strip(), day
                     )
                     st.success(f"🎉 국채 {bond_sell_amount:,}원 환매 완료!") if ok else st.error(msg)
                     if ok: st.rerun()
@@ -1332,38 +1282,25 @@ elif selected_user != "교사 관리자":
     # ── [탭5] 적금 ───────────────────────────────────────────
     with tab_saving:
         st.subheader("🏦 적금")
-
         st.info(
             f"🏦 적금은 돈을 넣어두면 **{saving_period}일 후 만기**에 "
             f"**{saving_rate}% 이자**를 붙여서 돌려받아요!\n\n"
             f"만기 전에는 꺼낼 수 없지만 원금이 보장된답니다."
         )
 
-        # 현재 적금 현황
         savings_df = get_savings(student_id)
-
         if not savings_df.empty:
             st.markdown("#### 📋 내 적금 현황")
-            display_savings = savings_df.copy()
-            display_savings["상태"] = display_savings["is_matured"].apply(
+            disp = savings_df.copy()
+            disp["상태"]      = disp["is_matured"].apply(
                 lambda x: "✅ 만기 지급 완료" if x else "⏳ 진행 중"
             )
-            display_savings["만기일"] = display_savings["end_day"].apply(
-                lambda x: f"{x}일차"
-            )
-            display_savings["납입금"] = display_savings["amount"].apply(
-                lambda x: f"{int(x):,}원"
-            )
-            display_savings["이자"] = display_savings["interest"].apply(
-                lambda x: f"{int(x):,}원"
-            )
-            display_savings["만기 수령액"] = display_savings["maturity_amount"].apply(
-                lambda x: f"{int(x):,}원"
-            )
+            disp["만기일"]    = disp["end_day"].apply(lambda x: f"{x}일차")
+            disp["납입금"]    = disp["amount"].apply(lambda x: f"{int(x):,}원")
+            disp["이자"]      = disp["interest"].apply(lambda x: f"{int(x):,}원")
+            disp["만기 수령액"] = disp["maturity_amount"].apply(lambda x: f"{int(x):,}원")
             st.dataframe(
-                display_savings[[
-                    "납입금","이자","만기 수령액","만기일","상태"
-                ]],
+                disp[["납입금","이자","만기 수령액","만기일","상태"]],
                 use_container_width=True, hide_index=True
             )
         else:
@@ -1371,17 +1308,14 @@ elif selected_user != "교사 관리자":
 
         st.markdown("---")
         st.markdown("### 🟢 적금 납입")
-
         saving_amount = st.number_input(
-            "납입 금액(원)", 10000, 1000000,
-            10000, 10000, key="saving_amount"
+            "납입 금액(원)", 10000, 1000000, 10000, 10000, key="saving_amount"
         )
         st.markdown(
             f"📌 만기일: **{day + saving_period}일차** | "
             f"예상 이자: **{int(saving_amount * saving_rate / 100):,}원** | "
-            f"만기 수령액: **{int(saving_amount * (1 + saving_rate/100)):,}원**"
+            f"만기 수령액: **{int(saving_amount * (1 + saving_rate / 100)):,}원**"
         )
-
         if saving_amount > assets["cash"]:
             st.error(f"잔액 부족! (보유 현금: {int(assets['cash']):,}원)")
 
@@ -1393,17 +1327,14 @@ elif selected_user != "교사 관리자":
         saving_disabled = (
             saving_reason.strip() == "" or saving_amount > assets["cash"]
         )
-        if st.button(
-            "✅ 적금 납입", type="primary",
-            disabled=saving_disabled, key="btn_saving"
-        ):
+        if st.button("✅ 적금 납입", type="primary", disabled=saving_disabled, key="btn_saving"):
             ok, msg = deposit_saving(
-                student_id, saving_amount,
-                saving_rate, day, day + saving_period,
+                student_id, saving_amount, saving_rate,
+                day, day + saving_period,
                 saving_reason.strip(), day
             )
             st.success(
-                f"🎉 {saving_amount:,}원 적금 납입 완료! "
+                f"🎉 {saving_amount:,}원 납입 완료! "
                 f"({day + saving_period}일차에 {int(saving_amount * (1 + saving_rate/100)):,}원 수령)"
             ) if ok else st.error(msg)
             if ok: st.rerun()
@@ -1412,59 +1343,58 @@ elif selected_user != "교사 관리자":
     with tab_portfolio:
         st.subheader("📂 내 전체 포트폴리오")
 
-        # 자산 구성 요약
-        total = assets["total"] if assets["total"] > 0 else 1
+        total_safe = assets["total"] if assets["total"] > 0 else 1
         portfolio_summary = [
             {"자산 종류": "💵 현금",
              "평가액(원)": int(assets["cash"]),
-             "비중(%)": round(assets["cash"] / total * 100, 1)},
+             "비중(%)": round(assets["cash"] / total_safe * 100, 1)},
             {"자산 종류": "📈 주식",
              "평가액(원)": int(assets["stock_val"]),
-             "비중(%)": round(assets["stock_val"] / total * 100, 1)},
+             "비중(%)": round(assets["stock_val"] / total_safe * 100, 1)},
             {"자산 종류": "🥇 금·비트코인",
              "평가액(원)": int(assets["alt_val"]),
-             "비중(%)": round(assets["alt_val"] / total * 100, 1)},
+             "비중(%)": round(assets["alt_val"] / total_safe * 100, 1)},
             {"자산 종류": "🏛️ 국채",
              "평가액(원)": int(assets["bond_val"]),
-             "비중(%)": round(assets["bond_val"] / total * 100, 1)},
+             "비중(%)": round(assets["bond_val"] / total_safe * 100, 1)},
             {"자산 종류": "🏦 적금",
              "평가액(원)": int(assets["saving_val"]),
-             "비중(%)": round(assets["saving_val"] / total * 100, 1)},
+             "비중(%)": round(assets["saving_val"] / total_safe * 100, 1)},
         ]
         st.dataframe(
             pd.DataFrame(portfolio_summary),
             use_container_width=True, hide_index=True
         )
 
-        # 주식 보유 상세
         sh_df = get_stock_holdings(student_id)
         if not sh_df.empty:
             st.markdown("#### 📈 보유 주식 상세")
-            st.dataframe(sh_df.rename(columns={
-                "name":"기업명","sector":"업종",
-                "quantity":"보유(주)","current_price":"현재가(원)",
-                "eval_amount":"평가액(원)"
-            })[["기업명","업종","보유(주)","현재가(원)","평가액(원)"]],
-            use_container_width=True, hide_index=True)
+            st.dataframe(
+                sh_df.rename(columns={
+                    "name": "기업명", "sector": "업종",
+                    "quantity": "보유(주)", "current_price": "현재가(원)",
+                    "eval_amount": "평가액(원)"
+                })[["기업명","업종","보유(주)","현재가(원)","평가액(원)"]],
+                use_container_width=True, hide_index=True
+            )
 
-        # 금·비트코인 보유 상세
         ah_df = get_alt_holdings(student_id)
         if not ah_df.empty:
             st.markdown("#### 🥇 보유 금·비트코인 상세")
-            st.dataframe(ah_df.rename(columns={
-                "name":"자산명","unit":"단위",
-                "quantity":"보유량","current_price":"현재가(원)",
-                "eval_amount":"평가액(원)"
-            })[["자산명","단위","보유량","현재가(원)","평가액(원)"]],
-            use_container_width=True, hide_index=True)
+            st.dataframe(
+                ah_df.rename(columns={
+                    "name": "자산명", "unit": "단위",
+                    "quantity": "보유량", "current_price": "현재가(원)",
+                    "eval_amount": "평가액(원)"
+                })[["자산명","단위","보유량","현재가(원)","평가액(원)"]],
+                use_container_width=True, hide_index=True
+            )
 
-        # 총 자산 요약
         st.markdown("---")
         p1, p2, p3 = st.columns(3)
-        p1.metric("🏦 총 자산",   f"{int(assets['total']):,}원")
-        p2.metric("📈 수익률",    f"{assets['profit_rate']:+.2f}%")
-        p3.metric("📉 인플레이션 누적 손실",
-                  f"{int(assets['cumulative_loss']):,}원")
+        p1.metric("🏦 총 자산",           f"{int(assets['total']):,}원")
+        p2.metric("📈 수익률",             f"{assets['profit_rate']:+.2f}%")
+        p3.metric("📉 인플레이션 누적 손실", f"{int(assets['cumulative_loss']):,}원")
 
     # ── [탭7] 거래 내역 ──────────────────────────────────────
     with tab_history:
@@ -1477,8 +1407,8 @@ elif selected_user != "교사 관리자":
                 t.asset_type AS 자산유형,
                 COALESCE(c.name, t.asset_type) AS 자산명,
                 CASE t.tx_type
-                    WHEN 'buy'  THEN '🟢 매수/납입'
-                    ELSE             '🔴 매도/환매'
+                    WHEN 'buy' THEN '🟢 매수/납입'
+                    ELSE            '🔴 매도/환매'
                 END          AS 거래유형,
                 t.quantity   AS 수량,
                 t.price      AS 단가,
