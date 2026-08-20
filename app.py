@@ -62,17 +62,18 @@ def get_alt_assets() -> pd.DataFrame:
 
 def get_news(day: int) -> pd.DataFrame:
     conn = get_connection()
+    # ✅ params 대신 f-string 방식으로 변경 (pandas 최신 버전 호환)
     df = pd.read_sql(
-        """
+        f"""
         SELECT n.content, n.news_type,
                COALESCE(c.name,'전체 경제') AS company_name,
                COALESCE(c.sector,'경제')    AS sector
         FROM news n
         LEFT JOIN companies c ON n.company_id = c.company_id
-        WHERE n.day = ?
+        WHERE n.day = {day}
         ORDER BY n.news_type, c.company_id
         """,
-        conn, params=(day,)
+        conn
     )
     conn.close()
     return df
@@ -88,15 +89,15 @@ def get_student_cash(student_id: int) -> float:
 def get_stock_holdings(student_id: int) -> pd.DataFrame:
     conn = get_connection()
     df = pd.read_sql(
-        """
+        f"""
         SELECT h.company_id, c.name, c.sector,
                h.quantity, c.current_price,
                (h.quantity * c.current_price) AS eval_amount
         FROM holdings h
         JOIN companies c ON h.company_id = c.company_id
-        WHERE h.student_id = ? AND h.quantity > 0
+        WHERE h.student_id = {student_id} AND h.quantity > 0
         """,
-        conn, params=(student_id,)
+        conn
     )
     conn.close()
     return df
@@ -104,15 +105,15 @@ def get_stock_holdings(student_id: int) -> pd.DataFrame:
 def get_alt_holdings(student_id: int) -> pd.DataFrame:
     conn = get_connection()
     df = pd.read_sql(
-        """
+        f"""
         SELECT ah.asset_type, a.name, a.unit,
                ah.quantity, a.current_price,
                (ah.quantity * a.current_price) AS eval_amount
         FROM alt_holdings ah
         JOIN alt_assets a ON ah.asset_type = a.asset_type
-        WHERE ah.student_id = ? AND ah.quantity > 0
+        WHERE ah.student_id = {student_id} AND ah.quantity > 0
         """,
-        conn, params=(student_id,)
+        conn
     )
     conn.close()
     return df
@@ -128,15 +129,15 @@ def get_bond_holding(student_id: int) -> float:
 def get_savings(student_id: int) -> pd.DataFrame:
     conn = get_connection()
     df = pd.read_sql(
-        """
+        f"""
         SELECT saving_id, amount, rate, start_day, end_day, is_matured,
                ROUND(amount * rate / 100, 0)       AS interest,
                ROUND(amount * (1 + rate/100), 0)   AS maturity_amount
         FROM savings
-        WHERE student_id = ?
+        WHERE student_id = {student_id}
         ORDER BY saving_id DESC
         """,
-        conn, params=(student_id,)
+        conn
     )
     conn.close()
     return df
@@ -1400,7 +1401,7 @@ elif selected_user != "교사 관리자":
         st.subheader("📜 나의 전체 거래 내역")
         conn = get_connection()
         my_tx = pd.read_sql(
-            """
+            f"""
             SELECT
                 t.day        AS 거래일,
                 t.asset_type AS 자산유형,
@@ -1415,10 +1416,10 @@ elif selected_user != "교사 관리자":
                 t.reason     AS 투자이유
             FROM transactions t
             LEFT JOIN companies c ON t.company_id = c.company_id
-            WHERE t.student_id = ?
+            WHERE t.student_id = {student_id}
             ORDER BY t.tx_id DESC
             """,
-            conn, params=(student_id,)
+            conn
         )
         conn.close()
 
