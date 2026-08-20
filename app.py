@@ -629,31 +629,50 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
 
         st.markdown("---")
 
-        # 경제 지표 설정
+        st.markdown("---")
+
+        # ── 경제 지표 설정 ────────────────────────────────────
         st.markdown("#### ⚙️ 경제 지표 설정")
+
         ec1, ec2, ec3, ec4 = st.columns(4)
+
         with ec1:
             new_bond_rate = st.number_input(
                 "🏛️ 국채 일일 이자율(%)",
-                0.0, 5.0, get_bond_rate(), 0.1,
+                min_value=0.0,
+                max_value=5.0,
+                value=get_bond_rate(),
+                step=0.1,
                 help="하루 경과 시 국채 보유액에 이자 지급"
             )
+
         with ec2:
             new_saving_rate = st.number_input(
                 "🏦 적금 만기 이자율(%)",
-                0.0, 20.0, get_saving_rate(), 0.5,
+                min_value=0.0,
+                max_value=20.0,
+                value=get_saving_rate(),
+                step=0.5,
                 help="적금 만기 시 지급되는 총 이자율"
             )
-                with ec3:
+
+        with ec3:
             new_saving_period = st.number_input(
                 "🏦 적금 만기 기간(일)",
-                1, 30, get_saving_period(), 1,
+                min_value=1,
+                max_value=30,
+                value=get_saving_period(),
+                step=1,
                 help="적금 납입 후 만기까지 걸리는 거래일 수"
             )
+
         with ec4:
             new_inflation_rate = st.number_input(
                 "📉 일일 물가 상승률(%)",
-                0.0, 5.0, get_inflation_rate(), 0.1,
+                min_value=0.0,
+                max_value=5.0,
+                value=get_inflation_rate(),
+                step=0.1,
                 help="하루 경과 시 현금 보유액에서 차감되는 비율"
             )
 
@@ -668,29 +687,39 @@ if selected_user == "교사 관리자" and st.session_state["teacher_auth"]:
                 # 주식 시세 갱신
                 for cid, rate in change_rates.items():
                     cur = conn.execute(
-                        "SELECT current_price FROM companies WHERE company_id=?", (cid,)
+                        "SELECT current_price FROM companies WHERE company_id=?",
+                        (cid,)
                     ).fetchone()["current_price"]
                     new_price = max(100, int(cur * (1 + rate / 100)))
                     conn.execute(
-                        "UPDATE companies SET prev_price=current_price, current_price=? WHERE company_id=?",
+                        """
+                        UPDATE companies
+                        SET prev_price=current_price, current_price=?
+                        WHERE company_id=?
+                        """,
                         (new_price, cid)
                     )
 
                 # 대체 자산 시세 갱신
                 for atype, rate in alt_rates.items():
                     cur = float(conn.execute(
-                        "SELECT current_price FROM alt_assets WHERE asset_type=?", (atype,)
+                        "SELECT current_price FROM alt_assets WHERE asset_type=?",
+                        (atype,)
                     ).fetchone()["current_price"])
                     new_price = max(100, cur * (1 + rate / 100))
                     conn.execute(
-                        "UPDATE alt_assets SET prev_price=current_price, current_price=? WHERE asset_type=?",
+                        """
+                        UPDATE alt_assets
+                        SET prev_price=current_price, current_price=?
+                        WHERE asset_type=?
+                        """,
                         (new_price, atype)
                     )
 
-                # 경제 지표 저장
                 conn.commit()
                 conn.close()
 
+                # 경제 지표 저장
                 set_setting("bond_rate",      str(new_bond_rate))
                 set_setting("saving_rate",    str(new_saving_rate))
                 set_setting("saving_period",  str(new_saving_period))
