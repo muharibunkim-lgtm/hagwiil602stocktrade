@@ -1140,7 +1140,7 @@ elif selected_user != "교사 관리자":
 
             if alt_buy_type == "bitcoin":
                 alt_buy_qty = st.number_input(
-                    "수량(BTC)", 0.0001, 10.0, 0.0001, 0.0001,
+                    "수량(BTC, 0.0001개부터 구매 가능)", 0.0001, 10.0, 0.0001, 0.0001,
                     format="%.4f", key="alt_buy_qty"
                 )
             else:
