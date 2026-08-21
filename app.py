@@ -1336,7 +1336,9 @@ elif selected_user != "교사 관리자":
             st.success(
                 f"🎉 {saving_amount:,}원 납입 완료! "
                 f"({day + saving_period}일차에 {int(saving_amount * (1 + saving_rate/100)):,}원 수령)"
-            ) if ok st.rerun() else st.error(msg)
+            ) if ok: st.success("🎉 적금 가입이 완료되었습니다!")
+                     st.rerun()
+            else st.error(msg)
 
     # ── [탭6] 내 포트폴리오 ──────────────────────────────────
     with tab_portfolio:
