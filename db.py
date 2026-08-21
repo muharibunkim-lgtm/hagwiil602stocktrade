@@ -43,7 +43,7 @@ def get_connection():
         turso_token = os.environ.get("TURSO_AUTH_TOKEN")
 
     if turso_url and turso_token:
-        import libsql_experimental as libsql
+        import libsql
         conn = libsql.connect(database=turso_url, auth_token=turso_token)
     else:
         conn = sqlite3.connect(DB_PATH, check_same_thread=False)
