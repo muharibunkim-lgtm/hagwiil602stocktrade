@@ -24,10 +24,6 @@ DEFAULT_PASSWORD = "0000"
 
 
 def get_connection():
-    """
-    Streamlit Secrets 또는 환경 변수에 Turso 접속 정보(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN)가 있으면
-    Turso 클라우드 DB에 연결하고, 없으면 로컬 SQLite(stock_game.db)에 연결합니다.
-    """
     turso_url = None
     turso_token = None
 
@@ -180,8 +176,8 @@ def init_db():
         )
     """)
 
-    # 초기 데이터 삽입
-    c.execute("SELECT COUNT(*) as cnt FROM companies")
+    # 초기 데이터 삽입 (숫자 인덱스 [0]으로 수정됨)
+    c.execute("SELECT COUNT(*) FROM companies")
     if c.fetchone()[0] == 0:
         for name, sector, price in INITIAL_COMPANIES:
             c.execute(
@@ -189,7 +185,7 @@ def init_db():
                 (name, sector, price, price)
             )
 
-    c.execute("SELECT COUNT(*) as cnt FROM alt_assets")
+    c.execute("SELECT COUNT(*) FROM alt_assets")
     if c.fetchone()[0] == 0:
         c.execute(
             "INSERT INTO alt_assets (asset_type,name,unit,current_price,prev_price) VALUES (?,?,?,?,?)",
@@ -213,7 +209,7 @@ def init_db():
             (key, value)
         )
 
-    c.execute("SELECT COUNT(*) as cnt FROM students")
+    c.execute("SELECT COUNT(*) FROM students")
     if c.fetchone()[0] == 0:
         for i in range(1, NUM_STUDENTS + 1):
             c.execute(
@@ -250,7 +246,7 @@ def verify_student_password(student_id: int, password: str) -> bool:
         "SELECT password FROM students WHERE student_id=?", (student_id,)
     ).fetchone()
     conn.close()
-    return row["password"] == password if row else False
+    return row[0] == password if row else False
 
 
 def update_student_password(student_id: int, new_password: str):
@@ -347,11 +343,11 @@ def reset_game(reset_password: bool = False):
 def get_game_summary() -> dict:
     conn = get_connection()
     day      = int(get_setting("day") or 1)
-    tx_count = conn.execute("SELECT COUNT(*) as c FROM transactions").fetchone()["c"]
-    news_cnt = conn.execute("SELECT COUNT(*) as c FROM news").fetchone()["c"]
+    tx_count = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
+    news_cnt = conn.execute("SELECT COUNT(*) FROM news").fetchone()[0]
     active   = conn.execute(
-        "SELECT COUNT(DISTINCT student_id) as c FROM transactions"
-    ).fetchone()["c"]
+        "SELECT COUNT(DISTINCT student_id) FROM transactions"
+    ).fetchone()[0]
     conn.close()
     return {
         "current_day":      day,
