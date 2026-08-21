@@ -182,7 +182,7 @@ def init_db():
 
     # 초기 데이터 삽입
     c.execute("SELECT COUNT(*) as cnt FROM companies")
-    if c.fetchone()["cnt"] == 0:
+    if c.fetchone()[0] == 0:
         for name, sector, price in INITIAL_COMPANIES:
             c.execute(
                 "INSERT INTO companies (name,sector,current_price,prev_price) VALUES (?,?,?,?)",
@@ -190,7 +190,7 @@ def init_db():
             )
 
     c.execute("SELECT COUNT(*) as cnt FROM alt_assets")
-    if c.fetchone()["cnt"] == 0:
+    if c.fetchone()[0] == 0:
         c.execute(
             "INSERT INTO alt_assets (asset_type,name,unit,current_price,prev_price) VALUES (?,?,?,?,?)",
             ("gold", "금", "g", INITIAL_GOLD_PRICE, INITIAL_GOLD_PRICE)
@@ -214,7 +214,7 @@ def init_db():
         )
 
     c.execute("SELECT COUNT(*) as cnt FROM students")
-    if c.fetchone()["cnt"] == 0:
+    if c.fetchone()[0] == 0:
         for i in range(1, NUM_STUDENTS + 1):
             c.execute(
                 "INSERT INTO students (student_id,cash,password) VALUES (?,?,?)",
@@ -231,7 +231,7 @@ def get_setting(key: str) -> str:
         "SELECT value FROM game_settings WHERE key=?", (key,)
     ).fetchone()
     conn.close()
-    return row["value"] if row else None
+    return row[0] if row else None
 
 
 def set_setting(key: str, value: str):
