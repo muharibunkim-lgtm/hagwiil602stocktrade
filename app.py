@@ -1141,7 +1141,7 @@ elif selected_user != "교사 관리자":
             if alt_buy_type == "bitcoin":
                 alt_buy_qty = st.number_input(
                     "수량(BTC)", 0.0001, 10.0, 0.0001, 0.0001,
-                    format="%.2f", key="alt_buy_qty"
+                    format="%.4f", key="alt_buy_qty"
                 )
             else:
                 alt_buy_qty = st.number_input(
@@ -1195,7 +1195,7 @@ elif selected_user != "교사 관리자":
                 if alt_sell_type == "bitcoin":
                     alt_sell_qty = st.number_input(
                         "수량(BTC)", 0.0001, float(alt_max_qty), 0.0001, 0.0001,
-                        format="%.2f", key="alt_sell_qty"
+                        format="%.4f", key="alt_sell_qty"
                     )
                 else:
                     alt_sell_qty = st.number_input(
