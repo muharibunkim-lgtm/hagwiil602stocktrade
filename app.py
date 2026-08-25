@@ -180,15 +180,19 @@ def calc_total_assets(student_id):
     
     total = cash + stock_val + alt_val + bond_val + saving_val
     
+    # 초기 자금(100만 원) 대비 수익률 계산
+    initial_cash = 1000000.0
+    profit_rate = ((total - initial_cash) / initial_cash) * 100.0
+    
     return {
         "cash": cash,
         "stock_val": stock_val,
         "alt_val": alt_val,
         "bond_val": bond_val,
         "saving_val": saving_val,
-        "total": total
+        "total": total,
+        "profit_rate": profit_rate
     }
-
 # ── 거래 함수 ─────────────────────────────────────────────────
 
 def buy_stock(student_id, company_id, quantity, price, reason, day):
