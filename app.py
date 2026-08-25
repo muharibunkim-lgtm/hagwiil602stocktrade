@@ -176,6 +176,12 @@ def calc_total_assets(student_id):
     """, (student_id,)).fetchone()
     saving_val = float(r4[0]) if (r4 and r4[0] is not None) else 0.0
 
+    # 5. 물가상승 누적 손실액 조회
+    r5 = conn.execute("""
+        SELECT cumulative_loss FROM students WHERE student_id=?
+    """, (student_id,)).fetchone()
+    cumulative_loss = float(r5[0]) if (r5 and r5[0] is not None) else 0.0
+
     conn.close()
     
     total = cash + stock_val + alt_val + bond_val + saving_val
@@ -191,8 +197,10 @@ def calc_total_assets(student_id):
         "bond_val": bond_val,
         "saving_val": saving_val,
         "total": total,
-        "profit_rate": profit_rate
+        "profit_rate": profit_rate,
+        "cumulative_loss": cumulative_loss
     }
+    
 # ── 거래 함수 ─────────────────────────────────────────────────
 
 def buy_stock(student_id, company_id, quantity, price, reason, day):
