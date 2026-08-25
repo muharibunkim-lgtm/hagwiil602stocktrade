@@ -124,7 +124,7 @@ def get_bond_holding(student_id: int) -> float:
         "SELECT amount FROM bond_holdings WHERE student_id=?", (student_id,)
     ).fetchone()
     conn.close()
-    return float(row["amount"]) if row else 0.0
+    return float(row[0]) if row else 0.0
 
 def get_savings(student_id: int) -> pd.DataFrame:
     conn = get_connection()
@@ -241,7 +241,7 @@ def sell_stock(student_id, company_id, quantity, price, reason, day):
             "SELECT quantity FROM holdings WHERE student_id=? AND company_id=?",
             (student_id, company_id)
         ).fetchone()
-        if row is None or row["quantity"] < quantity:
+        if row is None or row[0] < quantity:
             conn.close()
             return False, "보유 주식이 부족합니다."
         conn.execute(
@@ -309,7 +309,7 @@ def sell_alt_asset(student_id, asset_type, quantity, price, reason, day):
             "SELECT quantity FROM alt_holdings WHERE student_id=? AND asset_type=?",
             (student_id, asset_type)
         ).fetchone()
-        if row is None or float(row["quantity"]) < quantity:
+        if row is None or float(row[0]) < quantity:
             conn.close()
             return False, "보유량이 부족합니다."
         conn.execute(
@@ -374,7 +374,7 @@ def sell_bond(student_id, amount, reason, day):
         row = conn.execute(
             "SELECT amount FROM bond_holdings WHERE student_id=?", (student_id,)
         ).fetchone()
-        if row is None or float(row["amount"]) < amount:
+        if row is None or float(row[0]) < amount:
             conn.close()
             return False, "보유 국채 금액이 부족합니다."
         conn.execute(
