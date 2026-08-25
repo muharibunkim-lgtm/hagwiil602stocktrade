@@ -142,58 +142,43 @@ def get_savings(student_id: int) -> pd.DataFrame:
     conn.close()
     return df
 
-def calc_total_assets(student_id: int) -> dict:
-    cash = get_student_cash(student_id)
+def calc_total_assets(student_id):
     conn = get_connection()
-
-    r1 = conn.execute(
-        """
-        SELECT COALESCE(SUM(h.quantity * c.current_price),0) AS v
-        FROM holdings h JOIN companies c ON h.company_id=c.company_id
+    cash = get_student_cash(student_id)
+    
+    # 1. 주식 평가액 계산 (r1["v"] -> r1[0])
+    r1 = conn.execute("""
+        SELECT SUM(h.quantity * c.current_price)
+        FROM holdings h
+        JOIN companies c ON h.company_id = c.company_id
         WHERE h.student_id=?
-        """, (student_id,)
-    ).fetchone()
-    stock_val = float(r1["v"])
-
-    r2 = conn.execute(
-        """
-        SELECT COALESCE(SUM(ah.quantity * a.current_price),0) AS v
-        FROM alt_holdings ah JOIN alt_assets a ON ah.asset_type=a.asset_type
+    """, (student_id,)).fetchone()
+    stock_val = float(r1[0]) if (r1 and r1[0] is not None) else 0.0
+    
+    # 2. 대체자산 평가액 계산 (r2["v"] -> r2[0])
+    r2 = conn.execute("""
+        SELECT SUM(ah.quantity * a.current_price)
+        FROM alt_holdings ah
+        JOIN alt_assets a ON ah.asset_type = a.asset_type
         WHERE ah.student_id=?
-        """, (student_id,)
-    ).fetchone()
-    alt_val = float(r2["v"])
+    """, (student_id,)).fetchone()
+    alt_val = float(r2[0]) if (r2 and r2[0] is not None) else 0.0
 
-    bond_val = get_bond_holding(student_id)
+    # 3. 채권 평가액 계산 (r3["amount"] -> r3[0])
+    r3 = conn.execute("""
+        SELECT amount FROM bond_holdings WHERE student_id=?
+    """, (student_id,)).fetchone()
+    bond_val = float(r3[0]) if (r3 and r3[0] is not None) else 0.0
 
-    r3 = conn.execute(
-        "SELECT COALESCE(SUM(amount),0) AS v FROM savings WHERE student_id=? AND is_matured=0",
-        (student_id,)
-    ).fetchone()
-    saving_val = float(r3["v"])
-
-    r4 = conn.execute(
-        "SELECT COALESCE(cumulative_loss,0) AS v FROM students WHERE student_id=?",
-        (student_id,)
-    ).fetchone()
-    cumulative_loss = float(r4["v"])
+    # 4. 적금 평가액 계산 (r4["v"] -> r4[0])
+    r4 = conn.execute("""
+        SELECT SUM(amount) FROM savings WHERE student_id=? AND is_matured=0
+    """, (student_id,)).fetchone()
+    saving_val = float(r4[0]) if (r4 and r4[0] is not None) else 0.0
 
     conn.close()
-
-    total       = cash + stock_val + alt_val + bond_val + saving_val
-    profit_rate = (total / INITIAL_CASH - 1) * 100
-
-    return {
-        "cash":            cash,
-        "stock_val":       stock_val,
-        "alt_val":         alt_val,
-        "bond_val":        bond_val,
-        "saving_val":      saving_val,
-        "total":           total,
-        "profit_rate":     profit_rate,
-        "cumulative_loss": cumulative_loss,
-    }
-
+    
+    return cash + stock_val + alt_val + bond_val + saving_val
 
 # ── 거래 함수 ─────────────────────────────────────────────────
 
