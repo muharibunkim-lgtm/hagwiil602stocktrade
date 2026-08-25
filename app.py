@@ -146,7 +146,7 @@ def calc_total_assets(student_id):
     conn = get_connection()
     cash = get_student_cash(student_id)
     
-    # 1. 주식 평가액 계산 (r1["v"] -> r1[0])
+    # 1. 주식 평가액
     r1 = conn.execute("""
         SELECT SUM(h.quantity * c.current_price)
         FROM holdings h
@@ -155,7 +155,7 @@ def calc_total_assets(student_id):
     """, (student_id,)).fetchone()
     stock_val = float(r1[0]) if (r1 and r1[0] is not None) else 0.0
     
-    # 2. 대체자산 평가액 계산 (r2["v"] -> r2[0])
+    # 2. 대체자산(금, 비트코인) 평가액
     r2 = conn.execute("""
         SELECT SUM(ah.quantity * a.current_price)
         FROM alt_holdings ah
@@ -164,13 +164,13 @@ def calc_total_assets(student_id):
     """, (student_id,)).fetchone()
     alt_val = float(r2[0]) if (r2 and r2[0] is not None) else 0.0
 
-    # 3. 채권 평가액 계산 (r3["amount"] -> r3[0])
+    # 3. 국채 평가액
     r3 = conn.execute("""
         SELECT amount FROM bond_holdings WHERE student_id=?
     """, (student_id,)).fetchone()
     bond_val = float(r3[0]) if (r3 and r3[0] is not None) else 0.0
 
-    # 4. 적금 평가액 계산 (r4["v"] -> r4[0])
+    # 4. 적금 평가액
     r4 = conn.execute("""
         SELECT SUM(amount) FROM savings WHERE student_id=? AND is_matured=0
     """, (student_id,)).fetchone()
@@ -178,7 +178,16 @@ def calc_total_assets(student_id):
 
     conn.close()
     
-    return cash + stock_val + alt_val + bond_val + saving_val
+    total = cash + stock_val + alt_val + bond_val + saving_val
+    
+    return {
+        "cash": cash,
+        "stock_val": stock_val,
+        "alt_val": alt_val,
+        "bond_val": bond_val,
+        "saving_val": saving_val,
+        "total": total
+    }
 
 # ── 거래 함수 ─────────────────────────────────────────────────
 
