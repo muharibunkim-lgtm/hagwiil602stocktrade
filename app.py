@@ -84,7 +84,7 @@ def get_student_cash(student_id: int) -> float:
         "SELECT cash FROM students WHERE student_id=?", (student_id,)
     ).fetchone()
     conn.close()
-    return float(row["cash"]) if row else 0.0
+    return float(row[0]) if row else 0.0
 
 def get_stock_holdings(student_id: int) -> pd.DataFrame:
     conn = get_connection()
