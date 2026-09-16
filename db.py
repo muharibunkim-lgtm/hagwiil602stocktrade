@@ -51,12 +51,38 @@ def get_connection():
 
     return conn
 
+import time
+
+def execute_with_retry(conn, sql, params=(), max_retries=3, delay=0.5):
+    """
+    Turso(원격 DB) 특성상 idle timeout으로 트랜잭션이
+    끊기는 경우가 있어, 실패 시 자동 재시도하는 헬퍼 함수.
+    """
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            conn.execute(sql, params)
+            conn.commit()  # ✅ 매 실행마다 즉시 커밋 → 트랜잭션 짧게 유지
+            return True
+        except Exception as e:
+            last_error = e
+            error_msg = str(e)
+            # SQLITE_BUSY / idle timeout 계열 오류만 재시도
+            if "SQLITE_BUSY" in error_msg or "idle" in error_msg.lower():
+                time.sleep(delay * (attempt + 1))  # 점진적 대기
+                continue
+            else:
+                raise  # 다른 종류 오류는 즉시 발생시킴
+    # 재시도 모두 실패 시 마지막 오류 발생
+    raise last_error
 
 def init_db():
     conn = get_connection()
     c = conn.cursor()
 
-    c.execute("""
+    # ── 테이블 생성 (하나씩 즉시 커밋) ─────────────────────
+    table_ddls = [
+        """
         CREATE TABLE IF NOT EXISTS companies (
             company_id    INTEGER PRIMARY KEY AUTOINCREMENT,
             name          TEXT    NOT NULL,
@@ -64,9 +90,8 @@ def init_db():
             current_price INTEGER NOT NULL,
             prev_price    INTEGER NOT NULL
         )
-    """)
-
-    c.execute("""
+        """,
+        """
         CREATE TABLE IF NOT EXISTS alt_assets (
             asset_id      INTEGER PRIMARY KEY AUTOINCREMENT,
             asset_type    TEXT    NOT NULL UNIQUE,
@@ -75,16 +100,14 @@ def init_db():
             current_price REAL    NOT NULL,
             prev_price    REAL    NOT NULL
         )
-    """)
-
-    c.execute("""
+        """,
+        """
         CREATE TABLE IF NOT EXISTS game_settings (
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         )
-    """)
-
-    c.execute("""
+        """,
+        """
         CREATE TABLE IF NOT EXISTS news (
             news_id    INTEGER PRIMARY KEY AUTOINCREMENT,
             day        INTEGER NOT NULL,
@@ -92,27 +115,16 @@ def init_db():
             content    TEXT    NOT NULL,
             news_type  TEXT    NOT NULL DEFAULT 'stock'
         )
-    """)
-
-    c.execute("""
+        """,
+        """
         CREATE TABLE IF NOT EXISTS students (
             student_id      INTEGER PRIMARY KEY,
             cash            REAL    NOT NULL,
             cumulative_loss REAL    NOT NULL DEFAULT 0,
             password        TEXT    NOT NULL DEFAULT '0000'
         )
-    """)
-
-    for col, definition in [
-        ("password",        "TEXT NOT NULL DEFAULT '0000'"),
-        ("cumulative_loss", "REAL NOT NULL DEFAULT 0"),
-    ]:
-        try:
-            c.execute(f"ALTER TABLE students ADD COLUMN {col} {definition}")
-        except Exception:
-            pass
-
-    c.execute("""
+        """,
+        """
         CREATE TABLE IF NOT EXISTS holdings (
             holding_id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER NOT NULL,
@@ -120,9 +132,8 @@ def init_db():
             quantity   INTEGER NOT NULL DEFAULT 0,
             UNIQUE (student_id, company_id)
         )
-    """)
-
-    c.execute("""
+        """,
+        """
         CREATE TABLE IF NOT EXISTS alt_holdings (
             alt_holding_id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id     INTEGER NOT NULL,
@@ -130,17 +141,15 @@ def init_db():
             quantity       REAL    NOT NULL DEFAULT 0,
             UNIQUE (student_id, asset_type)
         )
-    """)
-
-    c.execute("""
+        """,
+        """
         CREATE TABLE IF NOT EXISTS bond_holdings (
             bond_id    INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER NOT NULL UNIQUE,
             amount     REAL    NOT NULL DEFAULT 0
         )
-    """)
-
-    c.execute("""
+        """,
+        """
         CREATE TABLE IF NOT EXISTS savings (
             saving_id  INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER NOT NULL,
@@ -150,9 +159,8 @@ def init_db():
             end_day    INTEGER NOT NULL,
             is_matured INTEGER NOT NULL DEFAULT 0
         )
-    """)
-
-    c.execute("""
+        """,
+        """
         CREATE TABLE IF NOT EXISTS transactions (
             tx_id      INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER NOT NULL,
@@ -164,9 +172,8 @@ def init_db():
             reason     TEXT    NOT NULL,
             day        INTEGER NOT NULL
         )
-    """)
-
-    c.execute("""
+        """,
+        """
         CREATE TABLE IF NOT EXISTS inflation_log (
             log_id      INTEGER PRIMARY KEY AUTOINCREMENT,
             day         INTEGER NOT NULL,
@@ -174,28 +181,52 @@ def init_db():
             student_id  INTEGER NOT NULL,
             loss_amount REAL    NOT NULL
         )
-    """)
+        """,
+    ]
 
-    # 초기 데이터 삽입 (숫자 인덱스 [0]으로 수정됨)
-    c.execute("SELECT COUNT(*) FROM companies")
-    if c.fetchone()[0] == 0:
+    # ✅ 테이블 하나 생성할 때마다 즉시 커밋 (트랜잭션 짧게 유지)
+    for ddl in table_ddls:
+        execute_with_retry(conn, ddl)
+
+    # ── 컬럼 마이그레이션 (개별 커밋 + 실패 무시) ───────────
+    for col, definition in [
+        ("password",        "TEXT NOT NULL DEFAULT '0000'"),
+        ("cumulative_loss", "REAL NOT NULL DEFAULT 0"),
+    ]:
+        try:
+            execute_with_retry(
+                conn, f"ALTER TABLE students ADD COLUMN {col} {definition}"
+            )
+        except Exception:
+            pass  # 이미 컬럼이 존재하면 무시
+
+    # ── 초기 데이터 삽입 (섹션별 즉시 커밋) ─────────────────
+
+    # 기업 데이터
+    cnt = conn.execute("SELECT COUNT(*) as cnt FROM companies").fetchone()["cnt"]
+    if cnt == 0:
         for name, sector, price in INITIAL_COMPANIES:
-            c.execute(
+            execute_with_retry(
+                conn,
                 "INSERT INTO companies (name,sector,current_price,prev_price) VALUES (?,?,?,?)",
                 (name, sector, price, price)
             )
 
-    c.execute("SELECT COUNT(*) FROM alt_assets")
-    if c.fetchone()[0] == 0:
-        c.execute(
+    # 대체 자산 데이터
+    cnt = conn.execute("SELECT COUNT(*) as cnt FROM alt_assets").fetchone()["cnt"]
+    if cnt == 0:
+        execute_with_retry(
+            conn,
             "INSERT INTO alt_assets (asset_type,name,unit,current_price,prev_price) VALUES (?,?,?,?,?)",
             ("gold", "금", "g", INITIAL_GOLD_PRICE, INITIAL_GOLD_PRICE)
         )
-        c.execute(
+        execute_with_retry(
+            conn,
             "INSERT INTO alt_assets (asset_type,name,unit,current_price,prev_price) VALUES (?,?,?,?,?)",
             ("bitcoin", "비트코인", "BTC", INITIAL_BTC_PRICE, INITIAL_BTC_PRICE)
         )
 
+    # 게임 설정 기본값
     defaults = {
         "day":            "1",
         "bond_rate":      str(INITIAL_BOND_RATE),
@@ -204,22 +235,23 @@ def init_db():
         "inflation_rate": str(INITIAL_INFLATION_RATE),
     }
     for key, value in defaults.items():
-        c.execute(
+        execute_with_retry(
+            conn,
             "INSERT OR IGNORE INTO game_settings (key,value) VALUES (?,?)",
             (key, value)
         )
 
-    c.execute("SELECT COUNT(*) FROM students")
-    if c.fetchone()[0] == 0:
+    # 학생 데이터
+    cnt = conn.execute("SELECT COUNT(*) as cnt FROM students").fetchone()["cnt"]
+    if cnt == 0:
         for i in range(1, NUM_STUDENTS + 1):
-            c.execute(
+            execute_with_retry(
+                conn,
                 "INSERT INTO students (student_id,cash,password) VALUES (?,?,?)",
                 (i, INITIAL_CASH, DEFAULT_PASSWORD)
             )
 
-    conn.commit()
     conn.close()
-
 
 def get_setting(key: str) -> str:
     conn = get_connection()
